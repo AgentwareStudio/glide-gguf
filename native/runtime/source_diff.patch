@@ -1,0 +1,1042 @@
+--- glide_gguf_20261024/runtime/CMakeLists.txt
++++ glide_gguf_fa_20261024/runtime/CMakeLists.txt
+@@ -1,11 +1,17 @@
+ cmake_minimum_required(VERSION 3.20)
+-project(glide_logits_runner LANGUAGES C CXX)
++project(glide_logits_fa_runner LANGUAGES C CXX)
+ 
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_CXX_EXTENSIONS OFF)
+ set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp" CACHE PATH "Pinned official llama.cpp source")
+ set(GLIDE_LLAMA_REVISION "8e5a58df87ab59dfceb5b961ae26691e39f30c24")
++set(GLIDE_EVIDENCE_CONTRACT "${CMAKE_CURRENT_SOURCE_DIR}/../EXECUTION_EVIDENCE_CONTRACT.json")
++file(SHA256 "${GLIDE_EVIDENCE_CONTRACT}" GLIDE_EVIDENCE_CONTRACT_SHA256)
++if(NOT GLIDE_EVIDENCE_CONTRACT_SHA256 STREQUAL "e9b7c3b70d9cd5af8ce776ffa8e955f1c23d9cef50c84b66a14fd72ae599a433")
++  message(FATAL_ERROR "The immutable execution evidence contract does not match this implementation")
++endif()
++set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${GLIDE_EVIDENCE_CONTRACT}")
+ find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
+ execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/verify_llama_source.py" "${LLAMA_CPP_DIR}"
+   RESULT_VARIABLE GLIDE_SOURCE_STATUS OUTPUT_VARIABLE GLIDE_SOURCE_RESULT ERROR_VARIABLE GLIDE_SOURCE_ERROR)
+@@ -33,6 +39,9 @@
+ # CPU-only by default. CUDA support is opt-in at configure and run time.
+ # No automatic downloads or dynamic backend discovery.
+ option(GGML_CUDA "Build the optional CUDA backend (no GPU allocation at build time)" OFF)
++if(GGML_CUDA)
++  set(GGML_CUDA_FA ON CACHE BOOL "Required for the FA profile" FORCE)
++endif()
+ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+ foreach(OPT LLAMA_BUILD_COMMON LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_BUILD_APP LLAMA_OPENSSL GGML_METAL GGML_VULKAN GGML_SYCL GGML_OPENCL GGML_HIP GGML_RPC GGML_BACKEND_DL GGML_BLAS GGML_NATIVE)
+   set(${OPT} OFF CACHE BOOL "" FORCE)
+@@ -45,17 +54,17 @@
+   endif()
+ endforeach()
+ 
+-add_executable(glide-logits glide_logits.cpp)
+-target_include_directories(glide-logits PRIVATE "${LLAMA_CPP_DIR}/vendor")
+-target_link_libraries(glide-logits PRIVATE llama)
++add_executable(glide-logits-fa glide_logits.cpp)
++target_include_directories(glide-logits-fa PRIVATE "${LLAMA_CPP_DIR}/vendor")
++target_link_libraries(glide-logits-fa PRIVATE llama)
+ if(GGML_CUDA)
+-  target_compile_definitions(glide-logits PRIVATE GLIDE_CUDA_BUILD=1)
++  target_compile_definitions(glide-logits-fa PRIVATE GLIDE_CUDA_BUILD=1)
+ endif()
+-target_compile_definitions(glide-logits PRIVATE GLIDE_LLAMA_REVISION="${GLIDE_LLAMA_REVISION}")
++target_compile_definitions(glide-logits-fa PRIVATE GLIDE_EVIDENCE_CONTRACT_SHA256="${GLIDE_EVIDENCE_CONTRACT_SHA256}" GLIDE_LLAMA_REVISION="${GLIDE_LLAMA_REVISION}")
+ if(MSVC)
+-  target_compile_options(glide-logits PRIVATE /W4)
++  target_compile_options(glide-logits-fa PRIVATE /W4)
+ else()
+-  target_compile_options(glide-logits PRIVATE -Wall -Wextra -Wpedantic)
++  target_compile_options(glide-logits-fa PRIVATE -Wall -Wextra -Wpedantic)
+ endif()
+ 
+ enable_testing()
+@@ -67,12 +76,24 @@
+ target_link_libraries(glide-test-attention-control PRIVATE llama)
+ add_test(NAME source-integrity COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_source_verification.py")
+ if(Python3_FOUND)
+-  add_test(NAME cli-errors COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cli.py" "$<TARGET_FILE:glide-logits>")
++  add_test(NAME cli-errors COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cli.py" "$<TARGET_FILE:glide-logits-fa>")
+   execute_process(COMMAND "${Python3_EXECUTABLE}" -c "import numpy" RESULT_VARIABLE NUMPY_STATUS OUTPUT_QUIET ERROR_QUIET)
+   if(NUMPY_STATUS EQUAL 0)
+-    add_test(NAME tiny-model-cpu COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tiny_model.py" "$<TARGET_FILE:glide-logits>")
++    add_test(NAME tiny-model-cpu COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tiny_model.py" "$<TARGET_FILE:glide-logits-fa>")
+     set_tests_properties(tiny-model-cpu PROPERTIES ENVIRONMENT "LLAMA_CPP_DIR=${LLAMA_CPP_DIR}" TIMEOUT 120)
+-    add_test(NAME grouped-noncausal-cpu COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_grouped_noncausal.py" "$<TARGET_FILE:glide-logits>" "$<TARGET_FILE:glide-test-attention-control>")
++    add_test(NAME grouped-noncausal-cpu COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_grouped_noncausal.py" "$<TARGET_FILE:glide-logits-fa>" "$<TARGET_FILE:glide-test-attention-control>")
+     set_tests_properties(grouped-noncausal-cpu PROPERTIES ENVIRONMENT "LLAMA_CPP_DIR=${LLAMA_CPP_DIR}" TIMEOUT 120)
+   endif()
+ endif()
++
++if(NUMPY_STATUS EQUAL 0)
++  add_test(NAME production-shape-fa-cpu COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_fa_production_control.py"
++    --runner "$<TARGET_FILE:glide-logits-fa>" --control "$<TARGET_FILE:glide-test-attention-control>" --backend cpu
++    --output-dir "${CMAKE_BINARY_DIR}/production-shape-control")
++  set_tests_properties(production-shape-fa-cpu PROPERTIES ENVIRONMENT "LLAMA_CPP_DIR=${LLAMA_CPP_DIR}" TIMEOUT 600)
++endif()
++add_executable(glide-execution-evidence-tests tests/test_execution_evidence.cpp)
++target_include_directories(glide-execution-evidence-tests PRIVATE "${LLAMA_CPP_DIR}/vendor" "${CMAKE_CURRENT_SOURCE_DIR}")
++target_link_libraries(glide-execution-evidence-tests PRIVATE llama)
++add_test(NAME execution-evidence-admission COMMAND glide-execution-evidence-tests)
++add_test(NAME optimized-control-rejected COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_optimized_control.py")
+--- glide_gguf_20261024/runtime/README.md
++++ glide_gguf_fa_20261024/runtime/README.md
+@@ -1,137 +1,74 @@
+-# GLiDE native raw-logits runner
++# GLiDE Flash Attention + host token-embedding runner
+ 
+-This is a **dedicated GLiDE runtime**, not a stock llama-server decision model, chat completion server, embedding API, or a claim of generic GGUF UI compatibility. It loads the exported text-only Qwen3.5 model once and serves JSONL requests. Prompt formatting, official tokenization, candidate ordering, class grouping, softmax, routing, and cost semantics remain in the Python wrapper.
++This isolated native profile is `glide-fa-hostemb-v1`; its executable is `glide-logits-fa`. It is not the original FA-off executable. It loads the unchanged text-only Qwen3.5 GGUF and exposes LAST-pooled raw 255-way `cls.output.weight` logits through the original JSONL request protocol. Python owns tokenization, class order, softmax/routing and the frozen 28-case acceptance thresholds.
+ 
+-## Status and provenance
++## Scope and provenance
+ 
+-- Official `ggml-org/llama.cpp` commit: `8e5a58df87ab59dfceb5b961ae26691e39f30c24`.
+-- Official source archive SHA-256: `f1205ecd56f64fdc012e0b5bcd38defa7aaccec3d82aaaed45001d7bd6e30de0`.
+-- GLiDE source revision: `1a9a7ed94379c2ea6f324176c9bc22fb9b7b7d60`.
+-- CPU build, source-integrity checks, protocol tests, malformed CLI tests, and two synthetic hybrid-Qwen3.5 integration suites were executed here. **No real GLiDE weights, GPU execution, GLiDE parity evaluation, or public benchmark scores were tested by this runtime task.**
+-- The CUDA build path is provided for a separately authorized evaluation environment. No GPU was allocated here. CUDA compilation/runtime is not validated by the CPU test result.
++- Official llama.cpp commit: `8e5a58df87ab59dfceb5b961ae26691e39f30c24`.
++- Source archive SHA-256: `f1205ecd56f64fdc012e0b5bcd38defa7aaccec3d82aaaed45001d7bd6e30de0`.
++- The unchanged verifier checks all 3,901 official files and rejects extra native build inputs, modified content and redirected symlinks, at configure and before compilation.
++- `../EXECUTION_EVIDENCE_CONTRACT.json` SHA-256 is `e9b7c3b70d9cd5af8ce776ffa8e955f1c23d9cef50c84b66a14fd72ae599a433`. CMake computes it, checks the immutable implementation contract, and embeds it in the ready event.
++- CPU build and synthetic tests are local preparation only. No CUDA execution, GPU allocation, Colab action, model-weight download, real GLiDE parity or benchmark was performed by this runtime task.
++- No original runner/source/build or official llama.cpp file was edited. No vendor patch, model metadata or quantization change, global mmap/repack change, or network download is used.
+ 
+-## Small-head representation
++## Runtime invariants
+ 
+-The pinned official Qwen3.5 graph already supports `cls.output.weight`. We store its 255 BF16 rows directly, in the canonical GLiDE readout order. `qwen35.embedding_length_out=255`, `qwen35.pooling_type=LAST`, and a context configured with embeddings enabled make the graph expose the last-position raw projection via `llama_get_embeddings_seq(ctx, 0)`.
++The context explicitly requests `LLAMA_FLASH_ATTN_TYPE_ENABLED`, never AUTO; F16 K/V; one noncausal whole-prompt decode; `n_batch=n_ubatch=configured context`; all positional output rows; LAST pooling; and raw finite 255 logits. Prefix reuse and prompt truncation are prohibited. KV and recurrent memory are cleared before and after every attempted evaluation, including exception/abort cleanup. The reset flags become true only after the clear calls return.
+ 
+-The word “embeddings” is only the upstream API transport here. **The 255 returned values are unnormalized raw logits.** There is no softmax, sampler, generation, or normalization in this runner. The LAST pooling path gathers the final positional row. The normal vocabulary LM head is not expanded into the computation graph in this mode. The unused model-loader token-embedding fallback does not allocate an expanded vocabulary-sized GLiDE head.
++`--gpu-layers 0` means CPU. `--gpu-layers -1` means full CUDA offload and requires a CUDA build. Partial GPU-layer counts are rejected. Other CLI arguments and input validation remain the same as the original dedicated runner; `--version` includes the distinct executable name and profile. CPU cooperative timeout and outer watchdog requirements for GPU remain unchanged.
+ 
+-No backend patch and no fake D3/Pplx `decision.type` are used. The runner rejects a supplied `output.weight`, classifier bias, other classifier tensors, multimodal tensors/metadata, unknown GLiDE metadata, and stock decision metadata.
++Model parameters supply a null-terminated `tensor_buft_overrides` array, alive through model destruction, with exactly `^token_embd\.weight$` and `ggml_backend_cpu_buffer_type()`. The anchor matches both the token lookup weight and the otherwise-unused tied vocabulary duplicate, without touching the small classifier. Official loader selection may put a duplicate in a CPU-specific repacked buffer. The default logger is retained, including both DEBUG override lines and all actual buffer totals.
+ 
+-## Build
++No executed vocabulary head is **not** proof that an unused loader allocation disappeared. Actual model buffer totals and peak memory must be measured separately before asserting residency savings or 16 GiB fit.
+ 
+-Requires Python 3.9+ for build-time source verification (3.12+ for the source-fetch helper), a C++17 compiler, and CMake 3.20+. The ordinary CMake build needs no network after source is available.
++## Execution evidence
++
++Each successful response adds `execution_evidence`, with the fixed contract's exact schema/profile, requested backend, prompt length, one decode, reset flags, and observed FA/classifier/lookup node records. Full-attention count comes from the typed boolean `qwen35.attention.recurrent_layers` array, whose length must equal block count and contain at least one full layer. Production has 16 full layers; synthetic fixtures have one or two.
++
++Evidence requires BOTH the node's `GGML_TENSOR_FLAG_COMPUTE` and the public scheduler callback's successful synchronized post-execution (`ask=false`) phase. This matters because the pinned scheduler also visits inactive mixed-input select branches. Pre-execution callbacks and inactive placeholders never count. Callback exceptions never cross the C boundary; failures are remembered and the request is rejected after cleanup, rather than stopping later graph work silently.
++
++Device records are taken from actual tensor allocation/buffer types and registered backend devices, not request flags. In this pin, CPU and CPU_Mapped buffer types have null device pointers; the implementation identifies those exact public buffer-type identities (including a zero-size `ggml_backend_cpu_buffer_from_ptr` probe) and resolves the registered CPU device. It never infers CPU from a buffer-name prefix. CUDA pinned/host buffers cannot serve as GPU execution evidence.
++
++Admission requires the exact unique FA-node count, one classifier matmul, one actually computed token lookup, no computed token-weight vocabulary matmul, and CPU token weights. CUDA additionally requires CUDA GPU/IGPU FA outputs and classifier output/weight allocations. CPU reports CPU honestly. This is synchronized scheduler/allocation evidence, not a profiler kernel trace or a guarantee of no unused allocation.
++
++## CPU build and test
++
++Use an existing verified source checkout. No fetch is needed or authorized in this preparation.
+ 
+ ```sh
+-python runtime/fetch_llama.py ./llama.cpp
+-cmake -S runtime -B runtime/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF
+-cmake --build runtime/build --target glide-logits glide-protocol-tests glide-test-attention-control -j 4
+-ctest --test-dir runtime/build --output-on-failure
++cmake -S runtime -B runtime/build-cpu \
++  -DLLAMA_CPP_DIR=/absolute/path/to/verified/llama.cpp \
++  -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF
++cmake --build runtime/build-cpu -j4
++ctest --test-dir runtime/build-cpu --output-on-failure
+ ```
+ 
+-An existing **clean** official git checkout at the exact commit can also be used with `-DLLAMA_CPP_DIR=/path/to/llama.cpp`. The fetch helper verifies the entire source archive. The included manifest enumerates SHA-256 hashes for all 3,901 official files and is itself checksum-pinned in verify_llama_source.py. CMake verifies every original file on configure and again before upstream compilation, and rejects additional native/backend/build inputs. A matching HEAD or PINNED_REVISION marker does not excuse modified content. Missing files and redirected symlinks are rejected. Do not edit upstream sources; re-fetch the exact pin instead.
++Build defaults are CPU-only, static project libraries, no dynamic backend discovery, no untested Metal/Vulkan/SYCL/HIP/RPC/BLAS paths. Local CPU instruction defaults are not a universal binary promise. This task used the already-present CMake under the original sibling's `toolchain/cmake/data/bin/`, read-only, and a wholly new output directory.
+ 
+-Linux, macOS, and Windows can build from source. Compiler/CPU ISA defaults still apply: the locally built Linux binary is not a universal binary and expects the instruction set reported in its configure log (this build uses x86 AVX2/FMA). Set appropriate `GGML_*` CPU feature flags for an older x86 host. CMake explicitly disables Metal, Vulkan, RPC, dynamic backends, and other untested device backends.
++## Synthetic controls and future CUDA commands
+ 
+-Optional CUDA build for an already authorized machine with an installed toolkit:
++The production-head synthetic fixture has head dimension 256, 24 query heads and 4 KV heads, with hidden size32 and FFN64 for speed. It contains recurrent/full/recurrent/full layers, recurrent key/value head ratio1:3. It is not a 64-layer/16-full-layer or real-weight quality/fit control. The older head16 fixture is retained only for protocol/LAST/state tests and is never CUDA-FA-shape proof.
++
++Controls cover lengths 1,16,31,32,33,63,64,65,127,128,129; causal versus noncausal graph behavior; comparison to an independent non-FA CPU graph; exclusion of unused/padded keys by 256-versus512 cache-capacity invariance; LAST analytic raw255; A/B/A reset; and malformed-input recovery. Synthetic comparison tolerances do not alter production parity thresholds.
++
++The following are future commands only, for a separately authorized CUDA environment. No CUDA command was run here.
+ 
+ ```sh
+-cmake -S runtime -B runtime/build-cuda -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=80
+-cmake --build runtime/build-cuda --target glide-logits -j 4
+-runtime/build-cuda/glide-logits --model glide.gguf --gpu-layers -1 --ctx-size 4096 --timeout-ms 600000
++cmake -S runtime -B runtime/build-cuda \
++  -DLLAMA_CPP_DIR=/absolute/path/to/verified/llama.cpp \
++  -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_FA=ON \
++  -DCMAKE_CUDA_ARCHITECTURES=80
++cmake --build runtime/build-cuda \
++  --target glide-logits-fa glide-test-attention-control -j4
++LLAMA_CPP_DIR=/absolute/path/to/verified/llama.cpp \
++python runtime/tests/test_fa_production_control.py \
++  --runner runtime/build-cuda/glide-logits-fa \
++  --control runtime/build-cuda/glide-test-attention-control \
++  --backend cuda --output-dir runtime/cuda-production-control
+ ```
+ 
+-`80` targets A100; select the actual device architecture when building elsewhere. These are documentation commands only: this task did not provision a runtime, access an account, purchase compute, or run a GPU. Executing the final command on an authorized machine will use its GPU memory. CPU-only builds reject nonzero `--gpu-layers`; CUDA builds remain CPU-only unless nonzero layers are explicitly requested.
++Architecture80 targets A100. The production control explicitly opts into CUDA for the candidate; the independent reference executable explicitly remains on CPU even in a CUDA-enabled build. `--backend cpu` runs the same control locally without GPU use. Optimized Python (`-O`/`PYTHONOPTIMIZE`) is refused before work, to prevent disabling admission assertions.
+ 
+-## Model contract
++`control_result.json` has schema `glide.native_fa_synthetic_control_result.v1`, actual backend/profile/evidence, fixture/runner/control/contract hashes, serial token requests, full input/stdout/stderr files and hashes, exit codes, and exact child-process reaping. It intentionally records GPU cleanliness as not observed. A supervising authorized build gate must independently establish no residual GPU processes and enrich/revalidate all artifacts into `glide.native_fa_synthetic_build_control.v1`; CPU control success must never be promoted into CUDA proof.
+ 
+-Required typed metadata:
+-
+-| Key | Value |
+-|---|---|
+-| `general.architecture` | string `qwen35` |
+-| `qwen35.attention.causal` | bool `false` |
+-| `qwen35.embedding_length_out` | uint32 `255` |
+-| `qwen35.pooling_type` | uint32 `3` (`LAST`) |
+-| `glide.format_version` | uint32 `1` |
+-| `glide.attention_mode` | string `noncausal_full_attention` |
+-| `glide.prompt_format` | string `glide-v1` |
+-| `glide.pooling` | string `last` |
+-| `glide.source_revision` | string `1a9a7ed94379c2ea6f324176c9bc22fb9b7b7d60` |
+-| `glide.text_only` | bool `true` |
+-| `glide.readout_layout` | string `cls.output` |
+-| `glide.readout_dtype` | string `BF16` |
+-| `glide.readout_token_ids_json` | canonical compact JSON string, 255 distinct integer token IDs |
+-| `glide.tokenizer_sha256` | string `06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523` |
+-| `glide.decision_config_sha256` | string `df40c569d6248a8562177ea8377d47c6fbe558521f60dd14e4e8a78d04e7ce10` |
+-| `glide.llama_cpp_commit` | string `8e5a58df87ab59dfceb5b961ae26691e39f30c24` |
+-| `glide.weight_source` | string `original-bf16` or `reconstructed-packed-effective-bf16` |
+-| `glide.provenance_json` | valid JSON-object string, at most 16 KiB, with matching `kind` and `revision` |
+-
+-The metadata hashes are pinned identity guards, not a cryptographic assertion that the tensor bytes are trustworthy. The Python wrapper must independently hash its tokenizer/config files and release packaging must hash the GGUF. `readout_token_ids_json` is compared to the request in exact order; Python additionally verifies the decision configuration. Standard Qwen3.5 backbone metadata and tensors must satisfy the official loader. Only the small head is forced BF16; the backbone may be quantized by the exporter workflow.
+-
+-After loading, the public model metadata API is checked again. The context must report noncausal attention, LAST pooling, 255 output dimensions, and sufficient logical/physical batch sizes. Context extrapolation past the model's training context is rejected.
+-
+-## JSONL protocol
+-
+-Start the process once and keep it open:
+-
+-```sh
+-runtime/build/glide-logits --model glide.gguf --ctx-size 4096 --threads 8 --timeout-ms 120000
+-```
+-
+-Each input line is one object with exactly these fields:
+-
+-- `id`: a string up to 256 UTF-8 bytes, or an integer. Reflected unchanged.
+-- `token_ids`: nonempty integer token IDs, already produced by the pinned official Python tokenizer/prompt API. Maximum length is `--ctx-size`; there is no automatic BOS, truncation, padding, tokenization, or prompt splitting.
+-- `readout_token_ids`: all 255 canonical token IDs from the decision config, in exact model metadata order.
+-
+-Success response:
+-
+-```json
+-{"id":"example","ok":true,"logits":[0.12,-0.34],"prompt_tokens":42,"decode_ms":12.3,"total_ms":12.6}
+-```
+-
+-The example array is abbreviated for readability; actual `logits` always has exactly 255 finite numbers. Each is the raw small-head output row corresponding to that index in `readout_token_ids`. `decode_ms` includes decode and synchronous output retrieval. `total_ms` includes pre-decode state clearing and request buffers, but not model loading or final post-response state cleanup. Timing is observational, not a benchmark score.
+-
+-Error response:
+-
+-```json
+-{"id":"example","ok":false,"error":{"code":"prompt_too_long","message":"Prompt exceeds --ctx-size; noncausal prompts must never be split"}}
+-```
+-
+-Malformed/unidentifiable requests use `id:null`. Invalid requests do not invoke decode; the process continues to subsequent lines. Duplicate fields, unknown fields, floats/booleans as tokens, out-of-range IDs, multimodal control tokens, mismatched readout order, excessive nesting, and lines over 4 MiB are rejected. A line over the size cap gets an immediate error, then is discarded through its newline. Use newline-terminated writes and flush them; reading an unfinished transport line necessarily waits for more bytes. EOF processes a nonempty final unterminated line.
+-
+-Stdout contains responses only. Upstream diagnostics and one JSON `event=ready` record go to stderr. Startup failures emit a JSON `event=fatal` record on stderr and exit with status 2. Input EOF exits cleanly with status 0.
+-
+-## State, batching, and time limits
+-
+-- The model and context load once. Both KV and recurrent memory are cleared before and after every decode, including error/abort paths.
+-- A request is exactly one sequence and exactly one whole-prompt `llama_decode` call. `n_batch=n_ubatch=--ctx-size`. Every token is output-enabled because LAST pooling must inspect all positional rows. There is no prefix caching, batching across requests, or incremental decode.
+-- The default context limit is 4096 and maximum supported CLI setting is 131072, subject to model limits and available memory. Large noncausal attention batches can consume substantial memory. Increase deliberately, never silently split the prompt.
+-- `--timeout-ms` defaults to 120000 and accepts up to 86400000. It is a **cooperative CPU abort**, checked between supported operations, not a hard process deadline. One long kernel can exceed it. CUDA execution does not provide the same abort guarantee. The Python client must enforce an external wall-clock deadline and terminate/restart a stalled process, especially for CUDA; a timed-out process must not be reused while its outcome is uncertain.
+-
+-## Tests and limitations
+-
+-```sh
+-python -m pip install numpy
+-python runtime/tests/test_tiny_model.py runtime/build/glide-logits
+-python runtime/tests/test_grouped_noncausal.py runtime/build/glide-logits runtime/build/glide-test-attention-control
+-python runtime/tests/test_source_verification.py
+-```
+-
+-The basic synthetic two-layer model includes one recurrent and one full-attention layer. A second, deeper model uses [recurrent, full, recurrent, full] layers with 2 key heads and 6 value heads in its GDN layers, reproducing the production 1:3 grouping ratio at smaller scale. Tests verify:
+-
+-1. Analytically known identity-residual last-position projection, exactly 255 ordered raw values, no softmax or vector normalization.
+-2. A/B/A repeated-prompt equality across another prompt and malformed requests, demonstrating recurrent/KV reset.
+-3. Empty/long/multimodal/mismatched inputs rejected and a following valid request succeeds.
+-4. Missing/wrong/unsupported metadata rejected before model execution.
+-5. Unit protocol coverage, including integer bounds, duplicate fields, excessive nesting, and malformed JSON; CLI errors and invalid GGUF rejection.
+-6. The deeper grouped-GDN model matches a separate noncausal control bit-for-bit, while a deliberately causal control differs on multi-token prompts. A one-token negative control agrees; A/B/A resets remain exact after a full-capacity 64-token whole-prompt batch. The early full-attention layer influences later layers, so this test can distinguish noncausal semantics at the final token.
+-7. Source verification rejects changed files despite an unchanged pinned marker, extra native files, missing files, and redirected source symlinks.
+-
+-The glide-test-attention-control executable is a separate **test-only** harness. It accepts only files explicitly marked test.synthetic_fixture=true. It is not installed or delivered as the production runner; the production executable still rejects causal model metadata and cannot enable causal attention through its CLI.
+-
+-The analytic CPU reference rounds the hidden activation to BF16 before the BF16-head dot product, matching upstream CPU `vec_dot_type=BF16`. Backend numerical tolerances, actual GLiDE prediction parity, task quality, and performance still require real-weight CPU/GPU validation. Synthetic metadata intentionally uses the pinned identity strings to test the loader contract; it is not evidence of genuine GLiDE weights or tokenization.
+-
+-Upstream licenses are included in `licenses/`. See the pinned official source for its full third-party notices.
++Fresh separate compilation is the supported provenance-preserving path. Existing upstream static build outputs were not reused: a safe cache reuse would need matching source/config/toolchain/CUDA-architecture/library hashes and explicit linkage provenance, not merely a nearby build directory.
+--- /dev/null
++++ glide_gguf_fa_20261024/runtime/execution_evidence.hpp
+@@ -0,0 +1,170 @@
++#pragma once
++#include "ggml.h"
++#include "ggml-backend.h"
++#include "protocol.hpp"
++#include <cstring>
++#include <cstdio>
++#include <set>
++#include <string>
++
++namespace glide {
++constexpr const char * kBackendProfile = "glide-fa-hostemb-v1";
++
++// Public cb_eval is called with ask=false only after a successful compute and
++// backend synchronization. No pre-execution reservation is execution evidence.
++struct execution_observer {
++    bool active = false;
++    bool callback_failed = false;
++    char callback_error[256]{};
++    bool reset_before = false;
++    bool reset_after = false;
++    int decode_calls = 0;
++    json fa = json::array();
++    json classifier = json::array();
++    json embedding = json::array();
++    json vocabulary = json::array();
++
++    void begin() {
++        active = false;
++        callback_failed = reset_before = reset_after = false;
++        callback_error[0] = 0;
++        decode_calls = 0;
++        fa = json::array(); classifier = json::array();
++        embedding = json::array(); vocabulary = json::array();
++        active = true;
++    }
++
++    static const char * device_type(enum ggml_backend_dev_type type) {
++        switch (type) {
++            case GGML_BACKEND_DEVICE_TYPE_CPU: return "CPU";
++            case GGML_BACKEND_DEVICE_TYPE_GPU: return "GPU";
++            case GGML_BACKEND_DEVICE_TYPE_IGPU: return "IGPU";
++            case GGML_BACKEND_DEVICE_TYPE_ACCEL: return "ACCEL";
++            default: return "UNKNOWN";
++        }
++    }
++
++    static ggml_backend_buffer_type_t mapped_cpu_type() {
++        // Pinned upstream leaves CPU and CPU_Mapped buft.device null. Obtain the
++        // exact public API type identity, not a name-based fallback or request flag.
++        static auto type = [] {
++            auto probe = ggml_backend_cpu_buffer_from_ptr(nullptr, 0);
++            if (!probe) throw error("execution_evidence_failed", "Could not identify mapped CPU buffer type");
++            auto result = ggml_backend_buffer_get_type(probe);
++            ggml_backend_buffer_free(probe);
++            return result;
++        }();
++        return type;
++    }
++
++    static json device(const ggml_tensor * tensor) {
++        if (!tensor) throw error("execution_evidence_failed", "Missing observed tensor");
++        // Views use their owning allocation, never a requested/guessed backend.
++        auto buffer = tensor->buffer;
++        for (const auto * view = tensor->view_src; !buffer && view; view = view->view_src) buffer = view->buffer;
++        if (!buffer) throw error("execution_evidence_failed", "Observed tensor has no allocated buffer");
++        const auto buft = ggml_backend_buffer_get_type(buffer);
++        auto dev = ggml_backend_buft_get_device(buft);
++        if (!dev && (buft == ggml_backend_cpu_buffer_type() || buft == mapped_cpu_type()))
++            dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
++        if (!dev) throw error("execution_evidence_failed", "Observed allocation has no device");
++        const auto reg = ggml_backend_dev_backend_reg(dev);
++        if (!reg) throw error("execution_evidence_failed", "Observed device has no backend registry");
++        if (std::strcmp(ggml_backend_reg_name(reg), "CUDA") == 0 && ggml_backend_buft_is_host(buft))
++            throw error("execution_evidence_failed", "CUDA host allocation is not GPU execution evidence");
++        return {{"backend", ggml_backend_reg_name(reg)}, {"type", device_type(ggml_backend_dev_type(dev))},
++                {"name", ggml_backend_dev_name(dev)}, {"buffer", ggml_backend_buft_name(buft)}};
++    }
++
++    static const char * weight_name(const ggml_tensor * tensor) noexcept {
++        if (!tensor) return nullptr;
++        // Scheduler copies retain the canonical source name between # delimiters.
++        // Reporting their actual copied allocation prevents misreporting CPU placement.
++        for (const char * canonical : {"cls.output.weight", "token_embd.weight"}) {
++            if (std::strcmp(tensor->name, canonical) == 0) return canonical;
++            const char * sep = std::strchr(tensor->name, '#');
++            if (sep && std::strncmp(sep + 1, canonical, std::strlen(canonical)) == 0 &&
++                sep[1 + std::strlen(canonical)] == '#') return canonical;
++        }
++        return nullptr;
++    }
++
++    static bool wanted(const ggml_tensor * node) noexcept {
++        // Scheduler callbacks also visit order-only/inactive select branches.
++        // Backends skip these nodes; a callback alone is not proof of execution.
++        if (!(node->flags & GGML_TENSOR_FLAG_COMPUTE)) return false;
++        if (node->op == GGML_OP_FLASH_ATTN_EXT) return true;
++        if (node->op != GGML_OP_MUL_MAT && node->op != GGML_OP_GET_ROWS) return false;
++        return weight_name(node->src[0]) != nullptr;
++    }
++
++    static bool callback(ggml_tensor * node, bool ask, void * opaque) noexcept {
++        auto & self = *static_cast<execution_observer *>(opaque);
++        if (!self.active || !node) return false;
++        if (ask) return wanted(node);
++        try {
++            if (!wanted(node)) return true;
++            if (!node->name[0]) throw error("execution_evidence_failed", "Unnamed observed node");
++            json record = {{"name", node->name}, {"op", ggml_op_name(node->op)},
++                {"output_device", device(node)}, {"phase", "post_execution"}, {"executed", true}};
++            if (node->op == GGML_OP_FLASH_ATTN_EXT) self.fa.push_back(std::move(record));
++            else {
++                const auto * weight = node->src[0];
++                const auto * name = weight_name(weight);
++                record["weight_name"] = name;
++                record["weight_device"] = device(weight);
++                if (std::strcmp(name, "cls.output.weight") == 0 && node->op == GGML_OP_MUL_MAT)
++                    self.classifier.push_back(std::move(record));
++                else if (std::strcmp(name, "token_embd.weight") == 0 && node->op == GGML_OP_GET_ROWS)
++                    self.embedding.push_back(std::move(record));
++                else if (std::strcmp(name, "token_embd.weight") == 0 && node->op == GGML_OP_MUL_MAT)
++                    self.vocabulary.push_back(std::move(record));
++                else self.callback_failed = true;
++            }
++        } catch (const std::exception & exc) {
++            self.callback_failed = true;
++            std::snprintf(self.callback_error, sizeof(self.callback_error), "%s (%s)", exc.what(), node->name);
++        } catch (...) {
++            // Never unwind into C or allocate memory while recording failure.
++            self.callback_failed = true;
++        }
++        return true; // Do not truncate later computation on callback failure.
++    }
++
++    static bool cpu(const json & dev) { return dev.at("backend") == "CPU" && dev.at("type") == "CPU"; }
++    static bool cuda(const json & dev) {
++        return dev.at("backend") == "CUDA" && (dev.at("type") == "GPU" || dev.at("type") == "IGPU");
++    }
++
++    json finish(size_t prompt_tokens, size_t expected_layers, bool requested_cuda) {
++        active = false;
++        auto require = [](bool yes, const char * message) {
++            if (!yes) throw error("execution_evidence_failed", message);
++        };
++        if (callback_failed) throw error("execution_evidence_failed", callback_error[0] ? callback_error : "Post-execution callback could not attest executed allocations");
++        require(reset_before && reset_after && decode_calls == 1, "State reset or decode-count evidence missing");
++        require(fa.size() == expected_layers && expected_layers > 0, "Unexpected number of executed Flash Attention nodes");
++        std::set<std::string> names;
++        for (const auto & node : fa) {
++            require(names.insert(node.at("name").get<std::string>()).second, "Duplicate executed Flash Attention node");
++            require(requested_cuda ? cuda(node.at("output_device")) : cpu(node.at("output_device")),
++                    "Flash Attention executed on the wrong backend");
++        }
++        if (classifier.size() != 1 || embedding.size() != 1 || !vocabulary.empty())
++            throw error("execution_evidence_failed", "Expected exactly one classifier and lookup with no vocabulary matmul; observed " +
++                std::to_string(classifier.size()) + "/" + std::to_string(embedding.size()) + "/" + std::to_string(vocabulary.size()));
++        for (const auto * field : {"output_device", "weight_device"})
++            require(requested_cuda ? cuda(classifier[0].at(field)) : cpu(classifier[0].at(field)),
++                    "Classifier did not execute with weights and output on the requested backend");
++        require(cpu(embedding[0].at("weight_device")), "Token embedding weights are not on CPU");
++        require(requested_cuda ? (cpu(embedding[0].at("output_device")) || cuda(embedding[0].at("output_device"))) : cpu(embedding[0].at("output_device")),
++                "Token lookup output is not on an admitted backend");
++        return {{"schema", "glide.native_execution_evidence.v1"}, {"backend_profile", kBackendProfile},
++            {"requested_backend", requested_cuda ? "cuda" : "cpu"}, {"decode_calls", decode_calls},
++            {"prompt_tokens", prompt_tokens}, {"expected_full_attention_layers", expected_layers},
++            {"state_reset_before", reset_before}, {"state_reset_after", reset_after},
++            {"flash_attention_nodes", fa}, {"classifier_nodes", classifier},
++            {"token_embedding_nodes", embedding}, {"vocabulary_matmul_nodes", vocabulary}};
++    }
++};
++} // namespace glide
+--- glide_gguf_20261024/runtime/glide_logits.cpp
++++ glide_gguf_fa_20261024/runtime/glide_logits.cpp
+@@ -1,6 +1,8 @@
+ #include "llama.h"
+ #include "gguf.h"
+ #include "protocol.hpp"
++#include "execution_evidence.hpp"
++#include "ggml-cpu.h"
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -49,15 +51,15 @@
+         const std::string arg = argv[i];
+         if (arg == "--help") {
+             std::cout << "GLiDE raw logits runner (CPU by default) (no generation or softmax)\n"
+-                         "Usage: glide-logits --model MODEL.gguf [--ctx-size 4096] [--threads N] [--timeout-ms 120000] [--gpu-layers 0]\n"
++                         "Usage: glide-logits-fa --model MODEL.gguf [--ctx-size 4096] [--threads N] [--timeout-ms 120000] [--gpu-layers 0]\n"
+                          "Input: JSONL {id,token_ids,readout_token_ids}; exactly 255 canonical readout IDs.\n"
+                          "Each prompt is decoded once, in one noncausal batch, with fresh KV/recurrent state.\n"
+                          "--ctx-size: 1..131072 tokens, no truncation; --timeout-ms: 1..86400000 (cooperative CPU abort; GPU needs external watchdog).\n"
+-                         "--gpu-layers: 0 (CPU), 1..10000, or -1 (all); nonzero requires a CUDA-enabled build.\n";
++                         "--gpu-layers: 0 (CPU) or -1 (all CUDA); partial offload is rejected.\n";
+             std::exit(0);
+         }
+         if (arg == "--version") {
+-            std::cout << "glide-logits 1; llama.cpp " << GLIDE_LLAMA_REVISION << '\n';
++            std::cout << "glide-logits-fa 1; profile glide-fa-hostemb-v1; llama.cpp " << GLIDE_LLAMA_REVISION << '\n';
+             std::exit(0);
+         }
+         if (arg != "--model" && arg != "--ctx-size" && arg != "--threads" && arg != "--timeout-ms" && arg != "--gpu-layers")
+@@ -74,6 +76,7 @@
+ #ifndef GLIDE_CUDA_BUILD
+     if (opt.gpu_layers != 0) throw error("invalid_argument", "Nonzero --gpu-layers requires a GGML_CUDA=ON build");
+ #endif
++    if (opt.gpu_layers != 0 && opt.gpu_layers != -1) throw error("invalid_argument", "glide-fa-hostemb-v1 requires --gpu-layers 0 or -1; partial offload is not admitted");
+     if (opt.model_path.empty()) throw error("invalid_argument", "--model is required");
+     return opt;
+ }
+@@ -104,6 +107,7 @@
+ }
+ 
+ struct manifest {
++    size_t expected_full_attention_layers = 0;
+     std::vector<int32_t> readouts;
+     std::string readouts_json;
+     std::string tokenizer_sha256;
+@@ -160,6 +164,18 @@
+     }
+     if (!has_output) throw error("unsupported_model", "Small GLiDE cls.output.weight is required");
+     manifest result;
++    const auto recurrent_key = require_key(gguf.get(), "qwen35.attention.recurrent_layers", GGUF_TYPE_ARRAY);
++    const auto block_count = gguf_get_val_u32(gguf.get(), require_key(gguf.get(), "qwen35.block_count", GGUF_TYPE_UINT32));
++    if (gguf_get_arr_type(gguf.get(), recurrent_key) != GGUF_TYPE_BOOL || block_count == 0 || block_count > 8192 ||
++        gguf_get_arr_n(gguf.get(), recurrent_key) != block_count)
++        throw error("unsupported_model", "Recurrent-layer metadata must be a typed bool array matching block count");
++    const auto * recurrent = static_cast<const uint8_t *>(gguf_get_arr_data(gguf.get(), recurrent_key));
++    for (uint32_t i = 0; i < block_count; ++i) {
++        if (recurrent[i] > 1) throw error("unsupported_model", "Invalid recurrent-layer boolean");
++        if (!recurrent[i]) ++result.expected_full_attention_layers;
++    }
++    if (!result.expected_full_attention_layers)
++        throw error("unsupported_model", "At least one full-attention layer is required");
+     result.readouts_json = require_string(gguf.get(), "glide.readout_token_ids_json");
+     if (result.readouts_json.size() > 16384) throw error("unsupported_model", "GLiDE readout metadata is too long");
+     result.readouts = glide::parse_readouts(glide::parse_json(result.readouts_json), std::numeric_limits<int32_t>::max());
+@@ -230,11 +246,22 @@
+ 
+ struct memory_guard {
+     llama_memory_t memory;
+-    explicit memory_guard(llama_context * ctx) : memory(llama_get_memory(ctx)) {
++    glide::execution_observer & observer;
++    bool cleared_after = false;
++    memory_guard(llama_context * ctx, glide::execution_observer & obs) : memory(llama_get_memory(ctx)), observer(obs) {
+         if (!memory) throw error("unsupported_model", "Qwen3.5 hybrid memory is unavailable");
+         llama_memory_clear(memory, true);
+-    }
+-    ~memory_guard() { llama_memory_clear(memory, true); }
++        observer.reset_before = true;
++    }
++    void clear_after() {
++        if (!cleared_after) {
++            llama_memory_clear(memory, true);
++            cleared_after = true;
++            observer.reset_after = true;
++        }
++        observer.active = false;
++    }
++    ~memory_guard() { clear_after(); }
+ };
+ 
+ struct deadline {
+@@ -251,9 +278,10 @@
+     return std::chrono::duration<double, std::milli>(clock_type::now() - start).count();
+ }
+ 
+-json evaluate(llama_context * ctx, const glide::request & request, const options & opt, deadline & timer) {
++json evaluate(llama_context * ctx, const glide::request & request, const options & opt, deadline & timer, glide::execution_observer & observer, size_t expected_layers) {
+     const auto started = clock_type::now();
+-    memory_guard state(ctx); // Clear both recurrent and KV storage, even after an exception/abort.
++    observer.begin();
++    memory_guard state(ctx, observer); // Clear both recurrent and KV storage, even after an exception/abort.
+     if (llama_get_causal_attn(ctx)) throw error("unsafe_context", "Context became causal; refusing evaluation");
+     if (request.token_ids.size() > llama_n_batch(ctx) || request.token_ids.size() > llama_n_ubatch(ctx) ||
+         request.token_ids.size() > llama_n_ctx(ctx))
+@@ -277,6 +305,7 @@
+     timer.end = clock_type::now() + std::chrono::milliseconds(opt.timeout_ms);
+     timer.expired = false;
+     const auto decode_start = clock_type::now();
++    ++observer.decode_calls;
+     const int status = llama_decode(ctx, batch); // EXACTLY ONE whole-prompt call. Never split or reuse prefix state.
+     if (status != 0) {
+         if (timer.expired) throw error("decode_timeout", "Cooperative CPU timeout reached; increase --timeout-ms if appropriate");
+@@ -292,7 +321,9 @@
+         if (!std::isfinite(value)) throw error("nonfinite_logits", "Selected last-position logits contain NaN or infinity");
+         logits.push_back(value);
+     }
+-    return {{"id", request.id}, {"ok", true}, {"logits", logits}, {"prompt_tokens", request.token_ids.size()},
++    state.clear_after();
++    const auto evidence = observer.finish(request.token_ids.size(), expected_layers, opt.gpu_layers != 0);
++    return {{"id", request.id}, {"ok", true}, {"execution_evidence", evidence}, {"logits", logits}, {"prompt_tokens", request.token_ids.size()},
+         {"decode_ms", decode_ms}, {"total_ms", elapsed_ms(started)}};
+ }
+ 
+@@ -306,6 +337,11 @@
+     params.split_mode = LLAMA_SPLIT_MODE_NONE;
+     params.load_mtp = false;
+     params.check_tensors = true;
++    // Anchored override catches both token embedding and the otherwise-unused tied
++    // vocabulary duplicate. Keep storage alive until after model destruction.
++    llama_model_tensor_buft_override host_embedding[] = {
++        {"^token_embd\\.weight$", ggml_backend_cpu_buffer_type()}, {nullptr, nullptr}};
++    params.tensor_buft_overrides = host_embedding;
+     std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
+         llama_model_load_from_file(opt.model_path.c_str(), params), llama_model_free);
+     if (!model) throw error("model_load_failed", "llama.cpp could not load model weights");
+@@ -320,6 +356,7 @@
+     const auto multimodal_tokens = find_multimodal_tokens(vocab);
+ 
+     deadline timer;
++    glide::execution_observer observer;
+     auto context_params = llama_context_default_params();
+     context_params.n_ctx = opt.ctx_size;
+     context_params.n_batch = opt.ctx_size;
+@@ -332,7 +369,10 @@
+     context_params.n_threads_batch = opt.threads;
+     context_params.pooling_type = LLAMA_POOLING_TYPE_LAST; // Only select the last raw 255-way projection; no normalization.
+     context_params.attention_type = LLAMA_ATTENTION_TYPE_UNSPECIFIED; // Honor validated model metadata, then assert it.
+-    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
++    context_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
++    context_params.type_k = context_params.type_v = GGML_TYPE_F16;
++    context_params.cb_eval = glide::execution_observer::callback;
++    context_params.cb_eval_user_data = &observer;
+     context_params.embeddings = true;
+     context_params.offload_kqv = opt.gpu_layers != 0;
+     context_params.op_offload = opt.gpu_layers != 0;
+@@ -345,7 +385,10 @@
+         llama_model_n_embd_out(model.get()) != 255 || llama_n_batch(ctx.get()) < opt.ctx_size || llama_n_ubatch(ctx.get()) < opt.ctx_size)
+         throw error("unsafe_context", "Context is causal or cannot hold the configured prompt in one physical batch");
+ 
+-    std::cerr << json({{"event", "ready"}, {"llama_revision", GLIDE_LLAMA_REVISION}, {"ctx_size", opt.ctx_size},
++    std::cerr << json({{"event", "ready"}, {"backend_profile", glide::kBackendProfile},
++        {"flash_attention", "enabled"}, {"token_embedding_override", {{"pattern", "^token_embd\\.weight$"}, {"buffer_type", "CPU"}}},
++        {"expected_full_attention_layers", info.expected_full_attention_layers},
++        {"evidence_contract_sha256", GLIDE_EVIDENCE_CONTRACT_SHA256}, {"llama_revision", GLIDE_LLAMA_REVISION}, {"ctx_size", opt.ctx_size},
+         {"n_batch", llama_n_batch(ctx.get())}, {"n_ubatch", llama_n_ubatch(ctx.get())}, {"causal_attention", false},
+         {"timeout_ms", opt.timeout_ms}, {"threads", opt.threads}, {"backend", opt.gpu_layers == 0 ? "cpu" : "cuda"}, {"gpu_layers", opt.gpu_layers},
+         {"tokenizer_sha256", info.tokenizer_sha256}, {"decision_config_sha256", info.decision_config_sha256}}).dump() << '\n';
+@@ -361,7 +404,7 @@
+             const auto value = glide::parse_json(input);
+             id = glide::request_id(value);
+             const auto request = glide::validate_request(value, vocab_size, opt.ctx_size, info.readouts, multimodal_tokens);
+-            std::cout << evaluate(ctx.get(), request, opt, timer).dump() << '\n' << std::flush;
++            std::cout << evaluate(ctx.get(), request, opt, timer, observer, info.expected_full_attention_layers).dump() << '\n' << std::flush;
+         } catch (const error & e) {
+             std::cout << glide::error_response(id, e.code, e.what()).dump() << '\n' << std::flush;
+         } catch (const std::exception & e) {
+--- glide_gguf_20261024/runtime/tests/attention_control.cpp
++++ glide_gguf_fa_20261024/runtime/tests/attention_control.cpp
+@@ -11,8 +11,10 @@
+ 
+ int main(int argc, char ** argv) {
+     try {
+-        if (argc != 3 || (std::strcmp(argv[2], "causal") != 0 && std::strcmp(argv[2], "noncausal") != 0))
+-            throw std::runtime_error("usage: glide-test-attention-control SYNTHETIC.gguf causal|noncausal");
++        if ((argc != 3 && argc != 4) || (std::strcmp(argv[2], "causal") != 0 && std::strcmp(argv[2], "noncausal") != 0))
++            throw std::runtime_error("usage: glide-test-attention-control SYNTHETIC.gguf causal|noncausal [context-size]");
++        const int capacity = argc == 4 ? std::stoi(argv[3]) : 64;
++        if (capacity < 1 || capacity > 1024) throw std::runtime_error("invalid synthetic capacity");
+         const bool causal = std::strcmp(argv[2], "causal") == 0;
+         llama_backend_init();
+         auto mp = llama_model_default_params();
+@@ -27,7 +29,7 @@
+             std::strcmp(marker, "true") != 0 || llama_model_n_embd_out(model.get()) != 255)
+             throw std::runtime_error("control executable accepts only explicitly marked 255-output synthetic fixtures");
+         auto cp = llama_context_default_params();
+-        cp.n_ctx = cp.n_batch = cp.n_ubatch = cp.n_outputs_max = cp.n_outputs_max_per_seq = 64;
++        cp.n_ctx = cp.n_batch = cp.n_ubatch = cp.n_outputs_max = cp.n_outputs_max_per_seq = capacity;
+         cp.n_seq_max = 1;
+         cp.n_rs_seq = 0;
+         cp.n_threads = cp.n_threads_batch = 2;
+@@ -35,6 +37,7 @@
+         cp.pooling_type = LLAMA_POOLING_TYPE_LAST;
+         cp.attention_type = causal ? LLAMA_ATTENTION_TYPE_CAUSAL : LLAMA_ATTENTION_TYPE_NON_CAUSAL;
+         cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
++        cp.type_k = cp.type_v = GGML_TYPE_F16;
+         cp.offload_kqv = cp.op_offload = false;
+         std::unique_ptr<llama_context, decltype(&llama_free)> ctx(llama_init_from_model(model.get(), cp), llama_free);
+         if (!ctx || llama_get_causal_attn(ctx.get()) != causal) throw std::runtime_error("wrong control context mode");
+@@ -43,7 +46,7 @@
+         const auto * vocab = llama_model_get_vocab(model.get());
+         std::string line;
+         while (std::getline(std::cin, line)) {
+-            auto req = glide::validate_request(glide::parse_json(line), llama_vocab_n_tokens(vocab), 64, readouts);
++            auto req = glide::validate_request(glide::parse_json(line), llama_vocab_n_tokens(vocab), capacity, readouts);
+             auto memory = llama_get_memory(ctx.get());
+             if (!memory) throw std::runtime_error("hybrid memory unavailable");
+             llama_memory_clear(memory, true);
+--- /dev/null
++++ glide_gguf_fa_20261024/runtime/tests/test_execution_evidence.cpp
+@@ -0,0 +1,72 @@
++// Unit tests of fail-closed evidence admission. Fabricated records are NOT runtime evidence.
++#include "execution_evidence.hpp"
++#include "llama.h"
++#include <functional>
++#include <iostream>
++#include <stdexcept>
++
++int main() {
++    using glide::json;
++    using glide::execution_observer;
++    size_t count = 0;
++    auto check = [&](bool yes, const char * msg) { if (!yes) throw std::runtime_error(msg); ++count; };
++    auto reject = [&](execution_observer value, size_t expected = 1, bool cuda = false) {
++        try { value.finish(3, expected, cuda); }
++        catch (const glide::error & e) { check(e.code == "execution_evidence_failed", "wrong error"); return; }
++        throw std::runtime_error("invalid execution evidence was accepted");
++    };
++    const json cpu = {{"backend", "CPU"}, {"type", "CPU"}, {"name", "unit-test CPU"}, {"buffer", "CPU"}};
++    const json cuda = {{"backend", "CUDA"}, {"type", "GPU"}, {"name", "unit-test CUDA"}, {"buffer", "CUDA0"}};
++    auto make = [&] {
++        execution_observer value;
++        value.begin(); value.decode_calls = 1; value.reset_before = value.reset_after = true;
++        value.fa.push_back({{"name", "kqv_out-1"}, {"op", "FLASH_ATTN_EXT"}, {"output_device", cpu}, {"phase", "post_execution"}, {"executed", true}});
++        value.classifier.push_back({{"name", "result_embd_proj"}, {"op", "MUL_MAT"}, {"weight_name", "cls.output.weight"},
++            {"output_device", cpu}, {"weight_device", cpu}, {"phase", "post_execution"}, {"executed", true}});
++        value.embedding.push_back({{"name", "lookup"}, {"op", "GET_ROWS"}, {"weight_name", "token_embd.weight"},
++            {"output_device", cpu}, {"weight_device", cpu}, {"phase", "post_execution"}, {"executed", true}});
++        return value;
++    };
++    auto good = make();
++    check(good.finish(3, 1, false).at("requested_backend") == "cpu", "CPU unit admission failed");
++    auto x = make(); x.reset_before = false; reject(x);
++    x = make(); x.reset_after = false; reject(x);
++    x = make(); x.decode_calls = 0; reject(x);
++    x = make(); x.decode_calls = 2; reject(x);
++    x = make(); x.callback_failed = true; reject(x);
++    reject(make(), 2); reject(make(), 0); reject(make(), 1, true);
++    x = make(); x.fa.push_back(x.fa[0]); reject(x, 2);
++    x = make(); x.classifier.clear(); reject(x);
++    x = make(); x.embedding.clear(); reject(x);
++    x = make(); x.vocabulary.push_back(x.classifier[0]); reject(x);
++    x = make(); x.embedding[0]["weight_device"] = cuda; reject(x);
++    x = make(); x.fa[0]["output_device"] = cuda; reject(x);
++    x = make(); x.classifier[0]["weight_device"] = cuda; reject(x);
++    x = make(); x.fa[0]["output_device"] = cuda; x.classifier[0]["output_device"] = cuda; x.classifier[0]["weight_device"] = cuda;
++    check(x.finish(3, 1, true).at("requested_backend") == "cuda", "CUDA admission logic unit failed");
++    x = make(); x.fa[0]["output_device"] = cuda; x.classifier[0]["output_device"] = cuda; x.classifier[0]["weight_device"] = cuda;
++    x.embedding[0]["output_device"]["backend"] = "Unknown"; reject(x, 1, true);
++    // Merely entering a callback is insufficient: inactive graph branches and
++    // pre-execution ask callbacks cannot fabricate successful node records.
++    ggml_tensor node{}; node.op = GGML_OP_FLASH_ATTN_EXT; std::strcpy(node.name, "test-fa");
++    x.begin();
++    check(!execution_observer::callback(&node, true, &x), "inactive branch selected");
++    execution_observer::callback(&node, false, &x);
++    check(x.fa.empty() && !x.callback_failed, "inactive branch recorded as executed");
++    node.flags = GGML_TENSOR_FLAG_COMPUTE;
++    check(execution_observer::callback(&node, true, &x) && x.fa.empty(), "pre-execution callback recorded evidence");
++    check(execution_observer::callback(&node, false, &x) && x.callback_failed, "unallocated node must fail without throwing");
++    llama_backend_init();
++    auto buffer = ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), 64);
++    node.buffer = buffer;
++    auto record = execution_observer::device(&node);
++    check(record["backend"] == "CPU" && record["type"] == "CPU" && record["buffer"] == "CPU", "actual CPU allocation not resolved");
++    ggml_backend_buffer_free(buffer);
++    alignas(64) char storage[64]{};
++    buffer = ggml_backend_cpu_buffer_from_ptr(storage, sizeof(storage)); node.buffer = buffer;
++    record = execution_observer::device(&node);
++    check(record["backend"] == "CPU" && record["type"] == "CPU" && record["buffer"] == "CPU_Mapped", "actual CPU mapped allocation not resolved");
++    ggml_backend_buffer_free(buffer);
++    llama_backend_free();
++    std::cout << count << " evidence admission checks passed; no CUDA execution claim\n";
++}
+--- /dev/null
++++ glide_gguf_fa_20261024/runtime/tests/test_fa_production_control.py
+@@ -0,0 +1,174 @@
++"""Production FA head geometry on synthetic weights. CPU pass is NOT CUDA proof.
++
++Produces control_result.json plus complete fixtures, requests, stdout/stderr.
++A supervisor may enrich the result with independently observed GPU cleanliness;
++this script NEVER fabricates such proof and NEVER calls nvidia-smi itself.
++"""
++if not __debug__:
++    raise RuntimeError("Synthetic admission control refuses optimized Python: assertions must remain active")
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import numpy as np
++from tiny_fixture import create_fixture, READOUTS, gguf
++
++PROFILE = "glide-fa-hostemb-v1"
++CONTRACT_SHA = "e9b7c3b70d9cd5af8ce776ffa8e955f1c23d9cef50c84b66a14fd72ae599a433"
++SHAPE = {"full_attention_head_dim": 256, "query_heads": 24, "kv_heads": 4,
++         "full_attention_layers": 2, "hidden_size": 32, "feed_forward_size": 64,
++         "recurrent_key_heads": 2, "recurrent_value_heads": 6, "recurrent_group_ratio": "1:3"}
++
++def sha(path):
++    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++def request(identifier, tokens):
++    return {"id": identifier, "token_ids": tokens, "readout_token_ids": READOUTS}
++
++def validate_evidence(row, tokens, backend):
++    assert row.get("ok") is True, row
++    ev = row["execution_evidence"]
++    assert ev["schema"] == "glide.native_execution_evidence.v1" and ev["backend_profile"] == PROFILE
++    assert ev["requested_backend"] == backend and ev["decode_calls"] == 1 and ev["prompt_tokens"] == len(tokens)
++    assert ev["expected_full_attention_layers"] == 2
++    assert ev["state_reset_before"] is True and ev["state_reset_after"] is True
++    assert not ev["vocabulary_matmul_nodes"]
++    assert len(ev["flash_attention_nodes"]) == 2
++    assert len(set(x["name"] for x in ev["flash_attention_nodes"])) == 2
++    expected_backend = backend.upper()
++    def device(record, cpu=False):
++        assert set(record) == {"backend", "type", "name", "buffer"} and record["name"] and record["buffer"]
++        assert record["backend"] == ("CPU" if cpu else expected_backend)
++        assert record["type"] in (["CPU"] if cpu or backend == "cpu" else ["GPU", "IGPU"])
++    for group, op, weight in [("flash_attention_nodes", "FLASH_ATTN_EXT", None),
++                             ("classifier_nodes", "MUL_MAT", "cls.output.weight"),
++                             ("token_embedding_nodes", "GET_ROWS", "token_embd.weight")]:
++        nodes = ev[group]
++        if weight: assert len(nodes) == 1
++        for node in nodes:
++            assert node["name"] and node["op"] == op and node["phase"] == "post_execution" and node["executed"] is True
++            if weight == "token_embd.weight":
++                out = node["output_device"]
++                assert (out["backend"], out["type"]) in [("CPU", "CPU"), ("CUDA", "GPU"), ("CUDA", "IGPU")]
++            else: device(node["output_device"])
++            if weight:
++                assert node["weight_name"] == weight
++                device(node["weight_device"], cpu=weight == "token_embd.weight")
++    assert len(row["logits"]) == 255 and np.isfinite(row["logits"]).all()
++    return ev
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--runner", required=True)
++    parser.add_argument("--control", required=True, help="CPU non-FA causal/noncausal control executable")
++    parser.add_argument("--backend", choices=["cpu", "cuda"], required=True)
++    parser.add_argument("--output-dir", required=True)
++    args = parser.parse_args()
++    out = Path(args.output_dir).resolve()
++    out.mkdir(parents=True, exist_ok=True)
++    # A failed rerun must not leave an earlier success receipt at this path.
++    (out / "control_result.json").write_text(json.dumps({"schema": "glide.native_fa_synthetic_control_result.v1", "status": "running"}) + "\n")
++    runner, control = str(Path(args.runner).resolve()), str(Path(args.control).resolve())
++    model, identity = out / "production-shape-SYNTHETIC.gguf", out / "identity-SYNTHETIC.gguf"
++    create_fixture(model, production_shape=True)
++    embeddings, head = create_fixture(identity, production_shape=True, identity=True)
++    runs = []
++
++    def invoke(tag, binary, argv, requests, native=False, capacity=256):
++        source = "".join((x if isinstance(x, str) else json.dumps(x, separators=(",", ":"))) + "\n" for x in requests)
++        input_path, stdout_path, stderr_path = [out / f"{tag}.{kind}" for kind in ["input.jsonl", "stdout.jsonl", "stderr.log"]]
++        input_path.write_text(source)
++        # subprocess.run waits/reaps the exact process. No residual runner PID is claimed
++        # from an external snapshot; any spawned-GPU-process proof is supervisor-owned.
++        proc = subprocess.run([binary, *argv], input=source, text=True, capture_output=True, timeout=600)
++        stdout_path.write_text(proc.stdout); stderr_path.write_text(proc.stderr)
++        record = {"tag": tag, "command": [binary, *argv], "exit_code": proc.returncode, "process_reaped": True,
++                  "input_path": str(input_path), "input_sha256": sha(input_path),
++                  "stdout_path": str(stdout_path), "stdout_sha256": sha(stdout_path),
++                  "stderr_path": str(stderr_path), "stderr_sha256": sha(stderr_path)}
++        runs.append(record)
++        assert proc.returncode == 0, proc.stderr[-16000:]
++        rows = [json.loads(line) for line in proc.stdout.splitlines()]
++        assert len(rows) == len(requests)
++        if native:
++            ready = [json.loads(line) for line in proc.stderr.splitlines() if line.startswith('{') and '"event":"ready"' in line]
++            assert len(ready) == 1
++            r = ready[0]
++            assert r["backend_profile"] == PROFILE and r["flash_attention"] == "enabled"
++            assert r["expected_full_attention_layers"] == 2 and r["evidence_contract_sha256"] == CONTRACT_SHA
++            assert r["token_embedding_override"] == {"pattern": r"^token_embd\.weight$", "buffer_type": "CPU"}
++            assert r["backend"] == args.backend and not r["causal_attention"]
++            assert r["n_batch"] >= capacity and r["n_ubatch"] >= capacity
++            record["ready"] = r
++            for req, row in zip(requests, rows):
++                if isinstance(req, dict) and req["token_ids"]:
++                    validate_evidence(row, req["token_ids"], args.backend)
++        return rows
++
++    def native(tag, path, requests, capacity=256):
++        return invoke(tag, runner, ["--model", str(path), "--ctx-size", str(capacity), "--threads", "2",
++                      "--gpu-layers", "-1" if args.backend == "cuda" else "0"], requests, True, capacity)
++
++    lengths = [1, 16, 31, 32, 33, 63, 64, 65, 127, 128, 129]
++    cases = [request(f"len-{n}", [(j * 13 + 7) % 500 for j in range(n)]) for n in lengths]
++    a, b = cases[4], cases[7]
++    requests = cases + ["{bad}", request("empty", []), request("a-again", a["token_ids"]), b,
++                        request("a-final", a["token_ids"])]
++    observed = native("native", model, requests)
++    assert observed[len(cases)]["error"]["code"] == "invalid_json"
++    assert observed[len(cases) + 1]["error"]["code"] == "empty_prompt"
++    for index in [len(cases) + 2, len(cases) + 4]:
++        np.testing.assert_array_equal(observed[4]["logits"], observed[index]["logits"])
++    baseline = invoke("noncausal-reference", control, [str(model), "noncausal", "256"], cases)
++    causal = invoke("causal-negative", control, [str(model), "causal", "256"], [cases[0], cases[4]])
++    max_error = 0.0
++    # Independent non-FA graph validates all real keys and exclusion of allocated
++    # padding slots at both sides of common tile boundaries. Synthetic tolerance
++    # is NOT a change to the frozen production 28-case parity thresholds.
++    for row, ref in zip(observed, baseline):
++        delta = float(np.max(np.abs(np.asarray(row["logits"]) - ref["logits"])))
++        max_error = max(max_error, delta)
++        np.testing.assert_allclose(row["logits"], ref["logits"], rtol=0.02, atol=0.02)
++    np.testing.assert_allclose(baseline[0]["logits"], causal[0]["logits"], rtol=1e-6, atol=1e-6)
++    causal_difference = float(np.max(np.abs(np.asarray(baseline[4]["logits"]) - causal[1]["logits"])))
++    assert causal_difference > 1e-4, "Synthetic fixture does not distinguish future-key visibility"
++    padded = native("extra-unused-key-capacity", model, [a], capacity=512)
++    # The same real keys with twice the unused cache space must not alter logits.
++    np.testing.assert_allclose(observed[4]["logits"], padded[0]["logits"], rtol=2e-5, atol=2e-5)
++    identity_rows = native("identity-last-raw255", identity, [request("last", [1, 7, 9]), request("single", [9]), request("other", [1, 7])])
++    analytic_max = 0.0
++    for row, token in zip(identity_rows, [9, 9, 7]):
++        hidden = embeddings[token] / np.sqrt(np.mean(embeddings[token] ** 2) + 1e-6)
++        # CPU BF16 matmul uses BF16 RHS. CUDA may accumulate the F32 activation
++        # directly, so permit the bounded BF16 activation rounding difference.
++        hidden = gguf.quants.dequantize(gguf.quants.quantize(hidden, gguf.GGMLQuantizationType.BF16), gguf.GGMLQuantizationType.BF16)
++        expected = head @ hidden
++        analytic_max = max(analytic_max, float(np.max(np.abs(np.asarray(row["logits"]) - expected))))
++        np.testing.assert_allclose(row["logits"], expected, rtol=0.015 if args.backend == "cuda" else 2e-5,
++                                   atol=0.015 if args.backend == "cuda" else 2e-5)
++        assert min(row["logits"]) < 0 and abs(np.linalg.norm(row["logits"]) - 1) > 1
++    np.testing.assert_array_equal(identity_rows[0]["logits"], identity_rows[1]["logits"])
++    result = {"schema": "glide.native_fa_synthetic_control_result.v1", "status": "passed", "backend_profile": PROFILE,
++              "backend": args.backend, "runner_sha256": sha(runner), "control_sha256": sha(control),
++              "evidence_contract_sha256": CONTRACT_SHA, "fixture": "SYNTHETIC random/identity weights, NOT GLiDE quality evidence",
++              "fixture_path": str(model), "fixture_sha256": sha(model), "identity_fixture_path": str(identity), "identity_fixture_sha256": sha(identity), "shape": SHAPE,
++              "request_lengths": lengths, "serial_requests": requests, "runs": runs,
++              "execution_evidence": [row["execution_evidence"] for row in observed if row.get("ok")],
++              "max_abs_vs_nonfa_cpu": max_error, "causal_negative_max_abs": causal_difference,
++              "last_raw255_analytic_max_abs": analytic_max, "aba_state_reset": "bitwise_equal",
++              "padding_key_exclusion": "non-FA reference plus 256/512 capacity invariance",
++              "error_recovery": ["invalid_json", "empty_prompt"], "exit_code": 0,
++              "clean_process": all(run["process_reaped"] and run["exit_code"] == 0 for run in runs),
++              "gpu_cleanliness": {"status": "not_observed", "requires_supervisor": True},
++              "cuda_execution_proven": args.backend == "cuda"}
++    (out / "control_result.json").write_text(json.dumps(result, indent=2) + "\n")
++    print(json.dumps({"status": "passed", "backend": args.backend, "output": str(out / "control_result.json"),
++                      "max_abs_vs_nonfa_cpu": max_error, "causal_negative_max_abs": causal_difference,
++                      "cuda_execution_proven": args.backend == "cuda"}))
++
++if __name__ == "__main__":
++    main()
+--- glide_gguf_20261024/runtime/tests/test_grouped_noncausal.py
++++ glide_gguf_fa_20261024/runtime/tests/test_grouped_noncausal.py
+@@ -37,7 +37,7 @@
+         assert native[i]["ok"] is True and noncausal[i]["causal"] is False and causal[i]["causal"] is True
+         assert native[i]["prompt_tokens"] == len(requests[i]["token_ids"])
+         assert np.isfinite(native[i]["logits"]).all()
+-        np.testing.assert_array_equal(native[i]["logits"], noncausal[i]["logits"])
++        np.testing.assert_allclose(native[i]["logits"], noncausal[i]["logits"], rtol=0.02, atol=0.02)
+     # State reset survives both a different prompt and a full-capacity physical batch.
+     for repeat in [2, 5]:
+         np.testing.assert_array_equal(native[0]["logits"], native[repeat]["logits"])
+@@ -50,7 +50,7 @@
+         assert int(np.sum(delta > 1e-5)) > 200, "Difference must be broad, not a single numerical outlier"
+         differences.append(float(delta.max()))
+     print(json.dumps({"result": "passed", "fixture": "SYNTHETIC, NOT GLiDE", "layer_types": ["recurrent", "full", "recurrent", "full"],
+-        "key_heads": 2, "value_heads": 6, "value_to_key_ratio": 3, "native_matches_noncausal_control": "bitwise_equal",
++        "key_heads": 2, "value_heads": 6, "value_to_key_ratio": 3, "native_matches_noncausal_control": "allclose_rtol_atol_0.02",
+         "aba_state_reset": "bitwise_equal", "single_token_control": "equal_within_1e-6",
+         "causal_vs_noncausal_max_abs_differences": differences, "whole_prompt_lengths": [len(item["token_ids"]) for item in requests],
+         "gpu_tested": False}))
+--- /dev/null
++++ glide_gguf_fa_20261024/runtime/tests/test_optimized_control.py
+@@ -0,0 +1,9 @@
++"""Even optimized interpreters must not weaken the CUDA synthetic admission tool."""
++from pathlib import Path
++import subprocess
++import sys
++script = Path(__file__).with_name("test_fa_production_control.py")
++result = subprocess.run([sys.executable, "-O", str(script), "--help"], text=True, capture_output=True, timeout=30)
++if result.returncode == 0 or "refuses optimized Python" not in result.stderr:
++    raise RuntimeError("Optimized admission control failed to reject before any work")
++print("Optimized control rejects before arguments, fixture generation, or runner launch")
+--- glide_gguf_20261024/runtime/tests/test_tiny_model.py
++++ glide_gguf_fa_20261024/runtime/tests/test_tiny_model.py
+@@ -70,7 +70,11 @@
+     assert stream_rows[4]["ok"] and stream_rows[4]["prompt_tokens"] == 1
+     np.testing.assert_array_equal(stream_rows[1]["logits"], rows[0]["logits"])
+ 
+-    invalid_metadata = [({"qwen35.attention.causal": True}, []), ({"glide.text_only": False}, []),
++    invalid_metadata = [({}, ["qwen35.attention.recurrent_layers"]),
++        ({"qwen35.attention.recurrent_layers": "false"}, []),
++        ({"qwen35.attention.recurrent_layers": [1, 0]}, []),
++        ({"qwen35.attention.recurrent_layers": [True]}, []),
++        ({"qwen35.attention.recurrent_layers": [True, True]}, []),({"qwen35.attention.causal": True}, []), ({"glide.text_only": False}, []),
+         ({"glide.format_version": 2}, []), ({"glide.readout_layout": "vocab"}, []),
+         ({"glide.tokenizer_sha256": "0" * 64}, []), ({"glide.decision_config_sha256": "0" * 64}, []),
+         ({"qwen35.decision.type": "d3"}, []), ({"decision.type": "d3"}, []),
+--- glide_gguf_20261024/runtime/tests/tiny_fixture.py
++++ glide_gguf_fa_20261024/runtime/tests/tiny_fixture.py
+@@ -15,7 +15,7 @@
+ CONFIG_SHA256 = "df40c569d6248a8562177ea8377d47c6fbe558521f60dd14e4e8a78d04e7ce10"
+ 
+ 
+-def create_fixture(path, identity=False, override=None, omit=None, *, deep_grouped=False):
++def create_fixture(path, identity=False, override=None, omit=None, *, deep_grouped=False, production_shape=False):
+     """Identity fixture has zero residual branches, permitting analytic last-row logits."""
+     override = override or {}
+     omit = set(omit or [])
+@@ -45,31 +45,35 @@
+             continue
+         if isinstance(value, bool):
+             writer.add_bool(key, value)
++        elif isinstance(value, list):
++            writer.add_array(key, value)
+         elif isinstance(value, int):
+             writer.add_uint32(key, value)
+         else:
+             writer.add_string(key, value)
+     writer.add_name("SYNTHETIC TEST FIXTURE, NOT GLiDE")
+     writer.add_bool("test.synthetic_fixture", True)
+-    writer.add_context_length(256)
++    writer.add_context_length(1024 if production_shape else 256)
+     writer.add_embedding_length(32)
+     # Deeper fixture makes earlier full attention affect later recurrent/full layers.
+-    recurrent = [True, False, True, False] if deep_grouped else [True, False]
+-    key_heads, value_heads = (2, 6) if deep_grouped else (2, 2)
++    recurrent = [True, False, True, False] if (deep_grouped or production_shape) else [True, False]
++    key_heads, value_heads = (2, 6) if (deep_grouped or production_shape) else (2, 2)
++    q_heads, kv_heads, head_dim = (24, 4, 256) if production_shape else (2, 2, 16)
+     state_size = 16
+     inner_size = state_size * value_heads
+     conv_size = state_size * (key_heads * 2 + value_heads)
+     writer.add_block_count(len(recurrent))
+     writer.add_feed_forward_length(64)
+-    writer.add_head_count(2)
+-    writer.add_head_count_kv(2)
+-    writer.add_key_length(16)
+-    writer.add_value_length(16)
++    writer.add_head_count(q_heads)
++    writer.add_head_count_kv(kv_heads)
++    writer.add_key_length(head_dim)
++    writer.add_value_length(head_dim)
+     writer.add_layer_norm_rms_eps(1e-6)
+-    writer.add_rope_dimension_count(16)
+-    writer.add_rope_dimension_sections([2, 2, 4, 0])
++    writer.add_rope_dimension_count(head_dim)
++    writer.add_rope_dimension_sections([32, 32, 64, 0] if production_shape else [2, 2, 4, 0])
+     writer.add_rope_freq_base(10000)
+-    writer.add_recurrent_layers(recurrent)
++    if "qwen35.attention.recurrent_layers" not in omit and "qwen35.attention.recurrent_layers" not in override:
++        writer.add_recurrent_layers(recurrent)
+     writer.add_ssm_conv_kernel(4)
+     writer.add_ssm_inner_size(inner_size)
+     writer.add_ssm_state_size(state_size)
+@@ -117,12 +121,12 @@
+             add(prefix + "ssm_norm.weight", (state_size,), value=1)
+             add(prefix + "ssm_out.weight", (32, inner_size), zero=identity)
+         else:
+-            add(prefix + "attn_q.weight", (64, 32))
+-            add(prefix + "attn_k.weight", (32, 32))
+-            add(prefix + "attn_v.weight", (32, 32))
+-            add(prefix + "attn_output.weight", (32, 32), zero=identity)
+-            add(prefix + "attn_q_norm.weight", (16,), value=1)
+-            add(prefix + "attn_k_norm.weight", (16,), value=1)
++            add(prefix + "attn_q.weight", (q_heads * head_dim * 2, 32))
++            add(prefix + "attn_k.weight", (kv_heads * head_dim, 32))
++            add(prefix + "attn_v.weight", (kv_heads * head_dim, 32))
++            add(prefix + "attn_output.weight", (32, q_heads * head_dim), zero=identity)
++            add(prefix + "attn_q_norm.weight", (head_dim,), value=1)
++            add(prefix + "attn_k_norm.weight", (head_dim,), value=1)
+     writer.write_header_to_file()
+     writer.write_kv_data_to_file()
+     writer.write_tensors_to_file()

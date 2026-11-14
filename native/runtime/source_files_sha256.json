@@ -1,0 +1,22 @@
+{
+  "CMakeLists.txt": "6e2bf683874dc93923a1a98153318343a27f6bca9ca72c73dbc3f1f10aee5abe",
+  "README.md": "9b2696cda9c61cb2d8bb5b488c8efbff30e0b3576256cc7c4f86bc1696b57d7f",
+  "execution_evidence.hpp": "f757f598ed84514b02445b92ae0e7a5dfd636323ede732ed7b46c93b61655c4d",
+  "fetch_llama.py": "caa109c013e382c7a0d510d801a723264dbea4bc0fbd841cde695359cc4c1c5d",
+  "glide_logits.cpp": "b3fe41a30bb161fcb4ab77b5a458d007a93c7a9176ffe6731bd29a0c0f196727",
+  "licenses/llama.cpp-LICENSE": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+  "licenses/nlohmann-json-LICENSE": "c0d068392ea65358b798b8c165103560f06e9e3b38c4ab4e2d8810a7b931af86",
+  "llama_source_manifest.json": "d46f476654a4c50de0ce49f47dc8e283daa07991e709b01345d530249b40560d",
+  "protocol.hpp": "c50e90e2c1a80d673ca9c5359e638fb42d9aedf78cba27c6f4af6c3e2dc04fdc",
+  "tests/attention_control.cpp": "040ee01e52f986128a606f9c7233d9cef97c760e42a40c16cce6d25ecfa16c21",
+  "tests/test_cli.py": "825751ae1a783aeb0838cf6cbecc37eaa5169d3fd90e632a857b784b06cb3237",
+  "tests/test_execution_evidence.cpp": "fb30d723ed7a0ef2946768baf9e3d13ea6e5de2cb38416986729556948825a8f",
+  "tests/test_fa_production_control.py": "15f99070704361510211578556d68cf58528c6e66719c5ac8f96f04458815517",
+  "tests/test_grouped_noncausal.py": "05d779960360b5e55bac64698472d1dc7d87bb977bbfd93d5db47e33e6de171c",
+  "tests/test_optimized_control.py": "b05263833a8a0f63e7ce39eb0080b7f550292322fc4842a3515127d33b43c1b8",
+  "tests/test_protocol.cpp": "eb036d5f732503e0685952959ae3e211194e0de9365959235f473132e72f999d",
+  "tests/test_source_verification.py": "b9f10f0a46963d32a493c47caa79e41cf5880775c8fd1717870e398fcd812c14",
+  "tests/test_tiny_model.py": "c1687778445b26d140523835a3df484479f5a7f1ca2c49edb486a1ab9e760221",
+  "tests/tiny_fixture.py": "85d5c7cc919efe3ba84b7398091ca1ef302b7ed8cc7b2ae02cd5c7f197583cd1",
+  "verify_llama_source.py": "8a433020cef5406db9b806efbdb446fbf402a119a100fed3da966cca7ee333cd"
+}
