@@ -1,0 +1,72 @@
+{
+  "schema": "glide.fa_execution_evidence_contract.v1",
+  "backend_profile": "glide-fa-hostemb-v1",
+  "status": "implementation_contract_not_runtime_evidence",
+  "ready_additions": {
+    "backend_profile": "glide-fa-hostemb-v1",
+    "flash_attention": "enabled",
+    "token_embedding_override": {
+      "pattern": "^token_embd\\.weight$",
+      "buffer_type": "CPU"
+    },
+    "expected_full_attention_layers": "positive integer derived from qwen35.attention.recurrent_layers",
+    "evidence_contract_sha256": "SHA256 of this immutable contract file"
+  },
+  "response_field": "execution_evidence",
+  "evidence_required_fields": {
+    "schema": "glide.native_execution_evidence.v1",
+    "backend_profile": "glide-fa-hostemb-v1",
+    "requested_backend": "cpu or cuda",
+    "decode_calls": 1,
+    "prompt_tokens": "integer equal to request length",
+    "expected_full_attention_layers": "positive integer matching ready",
+    "state_reset_before": true,
+    "state_reset_after": true,
+    "flash_attention_nodes": "array of observed FA node records, one unique name per full-attention layer",
+    "classifier_nodes": "array with exactly one weighted node record for cls.output.weight",
+    "token_embedding_nodes": "array with exactly one weighted node record for token_embd.weight GET_ROWS",
+    "vocabulary_matmul_nodes": "empty array; any observed token_embd.weight MUL_MAT is a failure"
+  },
+  "device_record_fields": {
+    "backend": "actual ggml backend registry name, e.g. CUDA or CPU",
+    "type": "actual device type mapped to CPU, GPU, IGPU, ACCEL, or UNKNOWN",
+    "name": "actual device name",
+    "buffer": "actual buffer type name"
+  },
+  "fa_node_record_fields": {
+    "name": "nonempty tensor node name",
+    "op": "FLASH_ATTN_EXT",
+    "output_device": "device record",
+    "phase": "post_execution",
+    "executed": true
+  },
+  "weighted_node_record_fields": {
+    "name": "nonempty tensor node name",
+    "op": "MUL_MAT for classifier or vocabulary; GET_ROWS for token embedding",
+    "weight_name": "exact source weight tensor name",
+    "output_device": "device record",
+    "weight_device": "device record",
+    "phase": "post_execution",
+    "executed": true
+  },
+  "cuda_admission": {
+    "flash_attention_output_devices": "every node backend CUDA and type GPU or IGPU",
+    "classifier_output_and_weight_devices": "both backend CUDA and type GPU or IGPU",
+    "token_embedding_weight_device": "backend CPU and type CPU; lookup output may be CPU or CUDA",
+    "no_missing_or_duplicate_fa_nodes": true,
+    "vocabulary_matmul_nodes": []
+  },
+  "cpu_tests": "All observed devices must be honestly reported; FA and classifier output/weight must be CPU, token embedding weight CPU. CPU pass is not CUDA proof.",
+  "observation": "Only successful post-execution scheduler observations count, not request flags or pre-execution callbacks. Callback never throws across C boundary; missing/invalid evidence rejects the request.",
+  "production_shape": {
+    "full_attention_head_dim": 256,
+    "query_heads": 24,
+    "kv_heads": 4,
+    "full_attention_layers": 16
+  },
+  "unchanged": "Original GGUF bytes, original source and llama.cpp pins, rawF32 scoring, noncausal whole prompt, one physical batch, F16 KV cache, frozen28-case numerical thresholds.",
+  "not_proven_by_attestation": [
+    "No additional unused model-weight allocation: require actual model buffer/peak measurements.",
+    "16GiB fit or quality equivalence."
+  ]
+}
