@@ -1,0 +1,8 @@
+*.safetensors
+*.gguf
+.env
+*.env
+__pycache__/
+.venv/
+build/
+runtime-work/
