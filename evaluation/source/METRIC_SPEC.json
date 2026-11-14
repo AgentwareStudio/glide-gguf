@@ -1,0 +1,16 @@
+{
+  "schema": "glide.full_public_paired_metric_spec.v1",
+  "frozen_before_quantized_full_public_inference_utc": "2026-10-24T09:33:22Z",
+  "scope": "Readback-only diagnostics for frozen complete public0.3 tasks. No model fitting, temperature calibration, recipe selection, new inference, aggregate Decision Index, or statistical equivalence claim.",
+  "required_task_counts": {"4": 3080, "5": 5500, "57": 12032, "58": 5507, "62": 3652},
+  "reference": "Original HF GLiDE BF16, serial batch1",
+  "probabilities": "Original ordered active-option probabilities at temperature1. Revalidate against the saved active readout logits; do not use the API confidence field, which is a top1-minus-top2 margin for choice.",
+  "revalidation": {"probability_normalization_absolute_tolerance": 0.000001, "saved_probability_vs_logit_softmax_absolute_tolerance": 0.0000000001},
+  "brier": "Unnormalized multiclass Brier: sum over active options of (p_i - 1[i=gold])^2, then arithmetic mean over requests. No division by number of classes.",
+  "nll": {"unit": "natural-log nats", "gold_probability_zero": "Unclipped mean NLL is +infinity, represented by null plus an explicit infinity flag and zero-gold-probability count.", "additional_clipped_diagnostic_epsilon": 1e-15, "additional_clipped_diagnostic_formula": "mean(-log(max(p_gold, epsilon)))"},
+  "ece": {"confidence": "max active-option probability, not GLiDE's API confidence", "bins": 15, "edges": [0.0, 0.06666666666666667, 0.13333333333333333, 0.2, 0.26666666666666666, 0.3333333333333333, 0.4, 0.4666666666666667, 0.5333333333333333, 0.6, 0.6666666666666666, 0.7333333333333333, 0.8, 0.8666666666666667, 0.9333333333333333, 1.0], "membership": "Left-closed/right-open, final bin includes1.0.", "formula": "sum_b (n_b/N) * abs(mean_top1_probability_b - accuracy_b)"},
+  "paired": ["top1 agreement with ordered tie-breaking", "both correct / BF16-only correct / candidate-only correct / both wrong", "per-request active-option probability MAE, total variation, and Jensen-Shannon divergence in nats", "centered all255-readout RMS drift and maximum absolute drift"],
+  "aggregation": "Per complete task only. Never combine these five scores into a Decision Index.",
+  "prior_exposure": "Each complete pool includes prior recipe-selection and final-slice cases; not a wholly fresh held-out test. Original-model training overlap is unknown.",
+  "failure_policy": "Reject incomplete, duplicate, failed, uncertain, membership-mismatched, identity-mismatched, or hash-mismatched arm snapshots. Keep denominator and status counts explicit. Never fill missing predictions with a score."
+}
