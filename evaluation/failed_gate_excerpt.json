@@ -1,0 +1,31 @@
+{
+  "disclosure": "Selected unchanged fields from the historical failed gate; not a rerun or a complete raw evidence archive. Later quality benchmarks did not change this gate.",
+  "source_sha256": "650bca6338cd710c0f86a134036749912d878d061443e6584ac9f641f8ebd9cb",
+  "historical_fields": {
+    "schema": "glide.native_l4_q4_deployment_gate.v1",
+    "status": "failed",
+    "contract_sha256": "18a38b1d161c4e5bd624e13252f4d7b887e07f8b3f68802132a81382c54b3fd7",
+    "scoring_policy": "native_raw_f32_readout_softmax_no_output_rounding",
+    "cases": 28,
+    "captured_requests_each_backend": 31,
+    "purpose": "Predeclared same-Q4 CPU-OFF vs L4FA deployment consistency",
+    "variant": "same_q4_cpu12_off_vs_l4_fa_v2",
+    "scope": "backend_consistency_not_quantization_or_original_precision_equivalence",
+    "scope_note": "CPU/GPU and attention backend differ together; not isolated FA toggle or quantization/original-precision equivalence",
+    "thresholds": {
+      "centered_all255_logits_max_abs": 0.5,
+      "centered_all255_logits_rms": 0.1,
+      "active_probability_mean_abs": 0.01,
+      "active_probability_max_abs": 0.03,
+      "top1_agreement_overall_min": 0.9,
+      "top1_agreement_baseline_margin_at_least_0_05": 1.0
+    },
+    "failures": [
+      "score3_3:active_probability_mean_abs",
+      "score3_3:active_probability_max_abs",
+      "score_numeric_keys:active_probability_mean_abs",
+      "null_state:active_probability_mean_abs"
+    ],
+    "overall_top1_agreement": 1.0
+  }
+}
