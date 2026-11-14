@@ -1,0 +1,17 @@
+^cls\.output\.weight$=bf16
+^blk\.11\.attn_k\.weight$=bf16
+^blk\.11\.attn_v\.weight$=bf16
+^blk\.15\.attn_k\.weight$=bf16
+^blk\.15\.attn_v\.weight$=bf16
+^blk\.19\.attn_v\.weight$=bf16
+^blk\.23\.attn_v\.weight$=bf16
+^blk\.3\.attn_k\.weight$=bf16
+^blk\.3\.attn_v\.weight$=bf16
+^blk\.31\.attn_output\.weight$=bf16
+^blk\.38\.ffn_up\.weight$=bf16
+^blk\.39\.attn_output\.weight$=bf16
+^blk\.43\.attn_output\.weight$=bf16
+^blk\.47\.attn_output\.weight$=bf16
+^blk\.6\.attn_qkv\.weight$=bf16
+^blk\.7\.attn_k\.weight$=bf16
+^blk\.7\.attn_v\.weight$=bf16

@@ -1,0 +1,22 @@
+{
+  "schema": "glide.transferred_sensitivity_map.v1",
+  "scope": "Transferred frozen NF4 sensitivity choices; not optimized or validated for native GGUF quantization",
+  "mapping": {
+    "backbone.layers.11.self_attn.k_proj": "blk.11.attn_k.weight",
+    "backbone.layers.11.self_attn.v_proj": "blk.11.attn_v.weight",
+    "backbone.layers.15.self_attn.k_proj": "blk.15.attn_k.weight",
+    "backbone.layers.15.self_attn.v_proj": "blk.15.attn_v.weight",
+    "backbone.layers.19.self_attn.v_proj": "blk.19.attn_v.weight",
+    "backbone.layers.23.self_attn.v_proj": "blk.23.attn_v.weight",
+    "backbone.layers.3.self_attn.k_proj": "blk.3.attn_k.weight",
+    "backbone.layers.3.self_attn.v_proj": "blk.3.attn_v.weight",
+    "backbone.layers.31.self_attn.o_proj": "blk.31.attn_output.weight",
+    "backbone.layers.38.mlp.up_proj": "blk.38.ffn_up.weight",
+    "backbone.layers.39.self_attn.o_proj": "blk.39.attn_output.weight",
+    "backbone.layers.43.self_attn.o_proj": "blk.43.attn_output.weight",
+    "backbone.layers.47.self_attn.o_proj": "blk.47.attn_output.weight",
+    "backbone.layers.6.linear_attn.in_proj_qkv": "blk.6.attn_qkv.weight",
+    "backbone.layers.7.self_attn.k_proj": "blk.7.attn_k.weight",
+    "backbone.layers.7.self_attn.v_proj": "blk.7.attn_v.weight"
+  }
+}
